@@ -1,7 +1,145 @@
 <!DOCTYPE html>
 <html>
+
+<head>
+  <title>Figma Plugin UI</title>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      background-color: #f0f0f0;
+      color: #2F2F33;
+      font-size: 14px;
+    }
+
+    button {
+      background-color: #3C7DE0;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-family: 'Arial', sans-serif;
+      font-weight: bold;
+      font-size: 12px;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 5px;
+      height: 32px;
+    }
+
+    button:active {
+      background-color: #005D92;
+    }
+
+    button:disabled {
+      background-color: #ced8e7;
+      color: #8193ae;
+    }
+
+    #layerNamesList {
+      list-style-type: none;
+      padding-left: 10px;
+      font-weight: bold;
+      font-size: 12px;
+      overflow-y: auto;
+      max-height: 290px;
+      padding-right: 20px;
+      box-sizing: content-box;
+    }
+
+    .semi-transparent {
+      opacity: 0.25;
+    }
+
+    #layerNamesList::-webkit-scrollbar {
+      width: 12px;
+    }
+
+    #layerNamesList::-webkit-scrollbar-track {
+      background: #f0f0f0;
+    }
+
+    #layerNamesList::-webkit-scrollbar-thumb {
+      background-color: #c4c4c4;
+      border-radius: 20px;
+      border: 3px solid #f0f0f0;
+    }
+
+    #layerNamesList::-webkit-scrollbar-thumb:hover {
+      background-color: #005D92;
+    }
+
+    #layerNamesList li {
+      margin-bottom: 5px;
+    }
+
+    #layerMessage {
+      font-weight: bold;
+      font-size: 12px;
+      text-align: center;
+      padding-top: 20px;
+      white-space: pre-wrap;
+    }
+
+    #warningMessage {
+      color: #ff7b00;
+      font-weight: bold;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .defaultMessage {
+      color: #2F2F33;
+      font-weight: bold;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .dark-mode {
+      background-color: #2F2F33;
+      color: #f0f0f0;
+    }
+
+    .dark-mode button {
+      background-color: #005D92;
+      color: white;
+    }
+
+    .dark-mode button:active {
+      background-color: #003F5C;
+    }
+
+    .dark-mode button:disabled {
+      background-color: #4C586A;
+      color: #BEBEBE;
+    }
+
+    .dark-mode #layerNamesList::-webkit-scrollbar-track {
+      background: #2F2F33;
+    }
+
+    .dark-mode #layerNamesList::-webkit-scrollbar-thumb {
+      background-color: #4C586A;
+      border: 3px solid #2F2F33;
+    }
+
+    .dark-mode #layerNamesList::-webkit-scrollbar-thumb:hover {
+      background-color: #3C7DE0;
+    }
+
+    .dark-mode defaultMessage {
+      color: #f0f0f0;
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+
 <body>
-  <button id="export-button">Export Layers</button>
+  <center><button id="export-button" disabled>Export Layers</button></center>
+  <div id="layer-names"></div>
+  <div id="warningMessage" style="display: none;"></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
   <script>
     document.getElementById('export-button').onclick = () => {
@@ -11,16 +149,48 @@
     window.addEventListener('message', async (event) => {
       const message = event.data.pluginMessage;
 
-      if (message.type === 'exported-layers') {
-        console.log('Received exported-layers message:', message);
+      if (message.type === 'update-layer-names') {
+        const layerNamesDiv = document.getElementById('layer-names');
+        const exportButton = document.getElementById('export-button');
+        const warningMessage = document.getElementById('warningMessage');
+        layerNamesDiv.innerHTML = ''; // Clear existing names
+
+        if (message.names.length === 0) {
+          layerNamesDiv.innerHTML = '<p class="defaultMessage">Select an asset to export.</p>';
+          exportButton.disabled = true;
+          warningMessage.style.display = 'none'; // Hide warning message
+        } else {
+          const assetNumber = message.names[0].match(/(\d+)/)[0]; // Extract AssetNumber from first layer name
+
+          if (assetNumber === '999') {
+            warningMessage.textContent = 'Make sure you update the Asset Number value for this asset in the properties panel!';
+            warningMessage.style.display = 'block';
+            exportButton.disabled = true;
+          } else {
+            warningMessage.style.display = 'none'; // Hide warning message
+            exportButton.disabled = false;
+
+            const ul = document.createElement('ul');
+            ul.id = 'layerNamesList';
+
+            message.names.forEach(name => {
+              const li = document.createElement('li');
+              li.innerHTML = `<span style="color: green;">&#10003;</span> ${name}`;
+              ul.appendChild(li);
+            });
+
+            layerNamesDiv.appendChild(ul);
+          }
+        }
+
+      } else if (message.type === 'exported-layers') {
         const layers = message.layers;
         const zip = new JSZip();
 
         for (const layer of layers) {
-          console.log(`Processing layer: ${layer.name}`);
           const blob = new Blob([layer.data], { type: 'application/octet-stream' });
 
-          if (layer.name === 'splash-999-botleft') {
+          if (layer.name.includes('botleft')) {
             const rotatedBlob = await rotateImage(blob);
             zip.file(`${layer.name}.png`, rotatedBlob);
           } else {
@@ -29,18 +199,12 @@
         }
 
         try {
-          console.log('Generating zip file...');
           const content = await zip.generateAsync({ type: 'blob' });
-          console.log('Zip file generated.');
-
           const url = URL.createObjectURL(content);
-          console.log('Blob URL created:', url);
-
           const a = document.createElement('a');
           a.href = url;
           a.download = 'exported_layers.zip';
           document.body.appendChild(a);
-          console.log('Download link created, clicking to download...');
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
@@ -59,16 +223,11 @@
         img.onload = () => {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
-
-          // Set canvas dimensions
           canvas.width = img.height;
           canvas.height = img.width;
-
-          // Rotate image 90 degrees clockwise
           ctx.translate(canvas.width / 2, canvas.height / 2);
           ctx.rotate(90 * Math.PI / 180);
           ctx.drawImage(img, -img.width / 2, -img.height / 2);
-
           canvas.toBlob((rotatedBlob) => {
             URL.revokeObjectURL(url);
             resolve(rotatedBlob);
@@ -85,4 +244,5 @@
     }
   </script>
 </body>
+
 </html>
